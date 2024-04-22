@@ -1,12 +1,16 @@
+import bson.errors
 from flask import Flask, request, jsonify
+from bson import ObjectId
+import pymongo.errors
 from sql_info import mongo_url, db_name
 from datetime import date
 import pymongo
+import bson
 
-app = Flask("aps2_henrique_bucci")
+app = Flask("aps5_henrique_bucci")
 
 client = pymongo.MongoClient(mongo_url)
-db = client['fotosWebapp']
+db = client['aps5']
 
 #--------------------------- Root ----------------------------
 
@@ -23,41 +27,38 @@ def hello_world():
 @app.route("/usuarios", methods=["GET", "POST"])
 def get_usuarios():
     collection = db['usuarios']
+
     #------------ GET ------------
     if request.method == "GET":
-        users = collection.find()
+
         try:
-            print([user for user in users])
-        except Exception as e:
-            return {"erro": str(e)}, 400
-        finally:
-            pass
+            users = list(collection.find({}))
+            for user in users:
+                user['_id'] = str(user['_id'])
+
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
 
         return {"usuarios" : users}, 200
     
     #------------ POST ------------
     elif request.method == "POST":
-        dic_user = request.json
+        user = request.json
 
-        for key in ["nome", "email", "data_cadastro"]:
-            if key not in dic_user.keys():
-                if key == "nome":
-                    return {"message" : "Necessário informar Nome do usuário."}, 400
-                elif key == "data_cadastro":
-                    dic_user[key] = date.today()
-                else:
-                    dic_user[key] = ""
+        for key in ["nome", "cpf", "data_nascimento"]:
+            if key not in user.keys():
+                return {"message" : f"Necessário informar campo {key} para realizar o cadastro."}, 400
 
         try:
-            pass
-        except Exception as e:
-            return {"erro": str(e)}, 400
+            inserted = collection.insert_one(user)
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
         finally:
-            pass
+            user['_id'] = str(user['_id'])
 
         resp = {
         "message": "Usuário cadastrado",
-        "usuario": dic_user}
+        "usuario": user}
 
         return resp, 201
 #-----------------------------------------------------------------
@@ -65,42 +66,36 @@ def get_usuarios():
 #GET (/usuarios/<int:id>): Retorna detalhes de um usuário específico pelo ID.
 #DELETE /usuarios/<int:id>: Exclui um usuário pelo ID.
 #PUT (/usuarios/<int:id>): Atualiza um usuário pelo ID.
-@app.route("/usuarios/<int:id>", methods=["GET", "DELETE", "PUT"])
+@app.route("/usuarios/<string:id>", methods=["GET", "DELETE", "PUT"])
 def get_usuario(id):
     collection = db['usuarios']
 
     #------------ GET ------------
     if request.method == "GET":
-        cur = conn.cursor()
         try:
-            cur.execute(f"SELECT * FROM usuarios WHERE id={id}")
-        except psycopg2.Error as e:
-            return {"erro": str(e)}, 400
+            user = collection.find_one({"_id": ObjectId(id)})
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
         finally:
-            data = cur.fetchone()
-            cur.close()
+            user['_id'] = str(user['_id'])
 
-        return {"usuario" : data}, 200
+        return {"usuario" : user}, 200
     
     #------------ DELETE ------------
     elif request.method == "DELETE":
-        cur = conn.cursor()
         try:
-            cur.execute(f"DELETE FROM usuarios WHERE id={id}")
-            if cur.rowcount == 0:
-                return {"message" : f"Usuário com ID={id} não existe."}, 204
+            deleted = collection.delete_one({'_id' : ObjectId(id)})
+            if deleted.deleted_count == 0:
+                return {"message" : f"Usuário com ID={id} não encontrado."}, 200
             else:
-                conn.commit()
-                return jsonify({"message" : f"Usuário com ID={id} deletado com sucesso."}), 200
-        except psycopg2.Error as e:
-            conn.rollback()
-            return {"erro": str(e)}, 400
-        finally:
-            cur.close()
+                return {"message" : f"Usuário com ID={id} deletado com sucesso."}, 200
+        except bson.errors.InvalidId:
+            return {"message": 'Insira um ID válido.'}, 400
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
     
     #------------ PUT ------------
     elif request.method == "PUT":
-        cur = conn.cursor()
         dic_livro = request.json
         try:
             cur.execute(f"SELECT * FROM usuarios WHERE id={id}")
@@ -132,25 +127,26 @@ def get_usuario(id):
 #POST (/bikes): Cadastro de um novo livro.
 @app.route("/bikes", methods=["GET", "POST"])
 def get_bikes():
-    collection = database['bikes']
+    collection = db['bikes']
 
     #------------ GET ------------
     if request.method == "GET":
-        cur = conn.cursor()
         args = request.args.to_dict()
+        print(args)
 
         try:
             if args:
-                cur.execute(f"SELECT * FROM livros WHERE cidade = %(cidade)s", args)
+                bikes = collection.find(args)
             else:
-                cur.execute("SELECT * FROM livros")
-            data = cur.fetchall()
-        except psycopg2.Error as e:
-            return {"erro": str(e)}, 400
-        finally:
-            cur.close()
+                bikes = collection.find({})
+            bikes = list(bikes)
+            for bike in bikes:
+                bike['_id'] = str(bike['_id'])
 
-        return {"livros" : data}, 200
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
+
+        return {"bicicletas" : bikes}, 200
 
     #------------ POST ------------
     elif request.method == 'POST':
