@@ -1,17 +1,10 @@
 from flask import Flask, request, jsonify
 from sql_info import mongo_url, db_name
 from datetime import date
-from flask_pymongo import PyMongo
 import pymongo
 
 app = Flask("aps2_henrique_bucci")
 
-
-#JEITO 1 DE CONECTAR
-app.config['MONGO_URI'] = mongo_url + db_name
-mongo = PyMongo(app)
-
-#JEITO 2 DE CONECTAR
 client = pymongo.MongoClient(mongo_url)
 db = client['fotosWebapp']
 
@@ -29,10 +22,10 @@ def hello_world():
 #POST (/usuarios): Cadastro de um novo usuário.
 @app.route("/usuarios", methods=["GET", "POST"])
 def get_usuarios():
-
+    collection = db['usuarios']
     #------------ GET ------------
     if request.method == "GET":
-        users = mongo.db.usuarios.find()
+        users = collection.find()
         try:
             print([user for user in users])
         except Exception as e:
@@ -44,7 +37,6 @@ def get_usuarios():
     
     #------------ POST ------------
     elif request.method == "POST":
-        cur = conn.cursor()
         dic_user = request.json
 
         for key in ["nome", "email", "data_cadastro"]:
@@ -57,14 +49,11 @@ def get_usuarios():
                     dic_user[key] = ""
 
         try:
-            cur.execute("""INSERT INTO usuarios (nome, email, data_cadastro) 
-                        VALUES('{nome}', '{email}', '{data_cadastro}')""".format(**dic_user))
-            conn.commit()
-        except psycopg2.Error as e:
-            conn.rollback()
+            pass
+        except Exception as e:
             return {"erro": str(e)}, 400
         finally:
-            cur.close()
+            pass
 
         resp = {
         "message": "Usuário cadastrado",
@@ -78,7 +67,7 @@ def get_usuarios():
 #PUT (/usuarios/<int:id>): Atualiza um usuário pelo ID.
 @app.route("/usuarios/<int:id>", methods=["GET", "DELETE", "PUT"])
 def get_usuario(id):
-    collection = database['usuarios']
+    collection = db['usuarios']
 
     #------------ GET ------------
     if request.method == "GET":
@@ -283,7 +272,7 @@ def get_emprestimos():
 #DELETE /emprestimos/<int:id>: Exclui um empréstimo pelo ID.
 @app.route("/emprestimos/<int:id>", methods=["DELETE"])
 def delete_emprestimo(id):
-    collection = database['usuarios']
+    collection = db['usuarios']
     cur = conn.cursor()
     try:
         cur.execute(f"DELETE FROM usuarios WHERE id={id}")
@@ -302,7 +291,7 @@ def delete_emprestimo(id):
 #POST /emprestimos/usuarios/<id_usuario>/bikes/<id_bike>: Exclui um empréstimo pelo ID.
 @app.route("/emprestimos/usuarios/<id_usuario>/bikes/<id_bike>", methods=["POST"])
 def post_emprestimo(id):
-    collection = database['usuarios']
+    collection = db['emprestimo']
     cur = conn.cursor()
     try:
         cur.execute(f"DELETE FROM usuarios WHERE id={id}")
