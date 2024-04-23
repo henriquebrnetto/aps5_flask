@@ -132,13 +132,16 @@ def get_bikes():
     #------------ GET ------------
     if request.method == "GET":
         args = request.args.to_dict()
-        print(args)
-
         try:
             if args:
+                if 'disponibilidade' in args:
+                    tf = {'true' : True, 'false' : False}
+                    args['disponibilidade'] = tf[args['disponibilidade']]
+                
                 bikes = collection.find(args)
             else:
                 bikes = collection.find({})
+
             bikes = list(bikes)
             for bike in bikes:
                 bike['_id'] = str(bike['_id'])
@@ -150,31 +153,24 @@ def get_bikes():
 
     #------------ POST ------------
     elif request.method == 'POST':
-        cur = conn.cursor()
-        dic_livro = request.json
+        bikes = request.json
 
-        for key in ["titulo", "autor", "ano_publi", "genero"]:
-            if key not in dic_livro.keys():
-                if key == "titulo":
-                    return {"message" : "Necessário informar Título do livro."}, 400
-                elif key == "ano_publi":
-                    dic_livro[key] = 0
+        for key in ["marca", "modelo", "cidade", "disponibilidade"]:
+            if key not in bikes.keys():
+                if key == "disponibilidade":
+                    bikes[key] = True
                 else:
-                    dic_livro[key] = ""
-
+                    return {"message" : f"Necessário informar {key} da bicicleta."}, 400
         try:
-            cur.execute("""INSERT INTO livros (titulo, autor, ano_publi, genero) 
-                        VALUES ('{titulo}', '{autor}', {ano_publi}, '{genero}')""".format(**dic_livro))
-            conn.commit()
-        except psycopg2.Error as e:
-            conn.rollback()
-            return {"erro": str(e)}, 400
+            inserted = collection.insert_one(bikes)
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
         finally:
-            cur.close()
+            bikes['_id'] = str(bikes['_id'])
 
         resp = {
-        "message": "Livro cadastrado",
-        "livro": dic_livro}
+        "message": "Bicicleta cadastrada",
+        "bicicletas": bikes}
 
         return resp, 201
 #-----------------------------------------------------------------
@@ -182,41 +178,36 @@ def get_bikes():
 #GET (/bikes/<int:id>): Retorna detalhes de um livro específico pelo ID.
 #DELETE (/bikes/<int:id>): Exclui um livro pelo ID.
 #PUT (/bikes/<int:id>): Atualiza um livro pelo ID.
-@app.route("/bikes/<int:id>", methods=["GET", "DELETE", "PUT"])
+@app.route("/bikes/<string:id>", methods=["GET", "DELETE", "PUT"])
 def get_bike(id):
-    collection = database['bikes']
+    collection = db['bikes']
 
     #------------ GET ------------
     if request.method == "GET":
-        cur = conn.cursor()
         try:
-            cur.execute(f"SELECT * FROM livros WHERE id={id}")
-            data = cur.fetchone()
-        except psycopg2.Error as e:
-            return {"erro": str(e)}, 400
+            bikes = collection.find_one({"_id": ObjectId(id)})
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
+        except bson.errors.InvalidId as e:
+            return {"message": f"Bicicleta com ID={id} não encontrada."}, 204
         finally:
-            cur.close()
+            if bikes != None:
+                bikes['_id'] = str(bikes['_id'])
 
-        if data == None:
-            return {'message' : f'Livro com ID={id} não encontrado.'}, 204
-        else:
-            return {"livro" : data}, 200
+        return {"bicicletas" : bikes}, 200
     
     #------------ DELETE ------------
     elif request.method == "DELETE":
-        cur = conn.cursor()
         try:
-            cur.execute(f"DELETE FROM livros WHERE id={id}")
-            if cur.rowcount == 0:
-                return {"message" : f"Livro com ID={id} não existe."}, 204
+            deleted = collection.delete_one({'_id' : ObjectId(id)})
+            if deleted.deleted_count == 0:
+                return {"message" : f"Bicicleta com ID={id} não encontrada."}, 204
             else:
-                conn.commit()
-                return {"message" : f"Livro com ID={id} deletado com sucesso."}, 200
-        except psycopg2.Error as e:
-            conn.rollback()
-            return {"erro": str(e)}, 400
-        finally:
-            cur.close()
+                return {"message" : f"Bicicleta com ID={id} deletada com sucesso."}, 200
+        except bson.errors.InvalidId:
+            return {"message": 'Insira um ID válido.'}, 400
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
     
     #------------ PUT ------------
     elif request.method == "PUT":
@@ -252,36 +243,33 @@ def get_bike(id):
 #GET (/emprestimos): Lista todos os empréstimos.
 @app.route("/emprestimos", methods=["GET"]) 
 def get_emprestimos():
-    collection = database['usuarios']
-    cur = conn.cursor()
+    collection = db['emprestimos']
     try:
-        cur.execute("SELECT * FROM usuarios")
-    except psycopg2.Error as e:
-        return {"erro": str(e)}, 400
+        emprestimos = list(collection.find({}))
+        for emprestimo in emprestimos:
+                emprestimo['_id'] = str(emprestimo['_id'])
+    except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
     finally:
-        data = cur.fetchall()
-        cur.close()
+        emprestimos['_id'] = str(emprestimos['_id'])
 
-    return {"usuarios" : data}, 200
+    return {"emprestimos" : emprestimos}, 200
 #-----------------------------------------------------------------
 
 #DELETE /emprestimos/<int:id>: Exclui um empréstimo pelo ID.
 @app.route("/emprestimos/<int:id>", methods=["DELETE"])
 def delete_emprestimo(id):
-    collection = db['usuarios']
-    cur = conn.cursor()
+    collection = db['emprestimos']
     try:
-        cur.execute(f"DELETE FROM usuarios WHERE id={id}")
-        if cur.rowcount == 0:
-            return {"message" : f"Usuário com ID={id} não existe."}, 204
+        deleted = collection.delete_one({'_id' : ObjectId(id)})
+        if deleted.deleted_count == 0:
+            return {"message" : f"Emprestimo com ID={id} não encontrado."}, 204
         else:
-            conn.commit()
-            return jsonify({"message" : f"Usuário com ID={id} deletado com sucesso."}), 200
-    except psycopg2.Error as e:
-        conn.rollback()
-        return {"erro": str(e)}, 400
-    finally:
-        cur.close()
+            return {"message" : f"Emprestimo com ID={id} deletado com sucesso."}, 200
+    except bson.errors.InvalidId:
+        return {"message": 'Insira um ID válido.'}, 400
+    except pymongo.errors.PyMongoError as e:
+        return {"server_error": str(e)}, 500
 #-----------------------------------------------------------------
 
 #POST /emprestimos/usuarios/<id_usuario>/bikes/<id_bike>: Exclui um empréstimo pelo ID.
