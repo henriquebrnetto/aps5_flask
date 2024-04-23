@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from bson import ObjectId
 import pymongo.errors
 from sql_info import mongo_url, db_name
-from datetime import date
+from datetime import datetime
 import pymongo
 import bson
 
@@ -137,7 +137,7 @@ def get_bikes():
         except pymongo.errors.PyMongoError as e:
             return {"server_error": str(e)}, 500
 
-        return {"bicicletas" : bikes}, co
+        return {"bicicletas" : bikes}, 200
 
     #------------ POST ------------
     elif request.method == 'POST':
@@ -267,9 +267,9 @@ def post_emprestimo(id_usuario, id_bike):
         db['emprestimos'].insert_one(loan)
 
         return jsonify({"message": "Empréstimo registrado com sucesso.", "emprestimo": loan}), 201
-    except InvalidId:
+    except bson.errors.InvalidId:
         return jsonify({"message": "ID inválido fornecido."}), 400
-    except PyMongoError as e:
+    except pymongo.errors.PyMongoError as e:
         return jsonify({"server_error": str(e)}), 500
 #-----------------------------------------------------------------
 
