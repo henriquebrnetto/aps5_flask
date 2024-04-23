@@ -96,29 +96,17 @@ def get_usuario(id):
     
     #------------ PUT ------------
     elif request.method == "PUT":
-        dic_livro = request.json
+        update_data = request.json
         try:
-            cur.execute(f"SELECT * FROM usuarios WHERE id={id}")
-            if cur.rowcount == 0:
-                return {"message" : f"Usuário com ID={id} não existe."}, 204
+            updated = collection.update_one({'_id': ObjectId(id)}, {'$set': update_data})
+            if updated.modified_count == 0:
+                return {"message" : f"Usuário com ID={id} não encontrado."}, 200
             else:
-                values = cur.fetchone()
-                cols = ["nome", "email", "data_cadastro"]
-                values = dict([(cols[i], values[i+1]) for i in range(len(values)-1)])
-                
-                for k, val in dic_livro.items():
-                    values[k] = val
-                
-                values = [f'{cols[i]} = \'{values[cols[i]]}\'' for i in range(len(cols))]
-                cur.execute(f'UPDATE usuarios SET {", ".join(values)} WHERE id={id}')
-                conn.commit()
-                return {'message' : f'Usuário com ID={id} atualizado com sucesso.'}, 200
-
-        except psycopg2.Error as e:
-            conn.rollback()
-            return {"erro": str(e)}, 400
-        finally:
-            cur.close()
+                return {"message" : f"Usuário com ID={id} atualizado com sucesso."}, 200
+        except bson.errors.InvalidId:
+            return {"message": 'Insira um ID válido.'}, 400
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
 #-----------------------------------------------------------------
 
 #--------------------------- Bikes ----------------------------
@@ -149,7 +137,7 @@ def get_bikes():
         except pymongo.errors.PyMongoError as e:
             return {"server_error": str(e)}, 500
 
-        return {"bicicletas" : bikes}, 200
+        return {"bicicletas" : bikes}, co
 
     #------------ POST ------------
     elif request.method == 'POST':
@@ -211,30 +199,17 @@ def get_bike(id):
     
     #------------ PUT ------------
     elif request.method == "PUT":
-        cur = conn.cursor()
-        dic_livro = request.json
+        update_data = request.json
         try:
-            cur.execute(f"SELECT * FROM livros WHERE id={id}")
-            if cur.rowcount == 0:
-                return {"message" : f"Livro com ID={id} não existe."}, 204
+            updated = collection.update_one({'_id': ObjectId(id)}, {'$set': update_data})
+            if updated.modified_count == 0:
+                return {"message" : f"Bicicleta com ID={id} não encontrado."}, 200
             else:
-                values = cur.fetchone()
-                cols = ['titulo', 'autor', 'ano_publi', 'genero']
-                values = dict([(cols[i], values[i+1]) for i in range(len(values)-1)])
-                
-                for k, val in dic_livro.items():
-                    values[k] = val
-                
-                values = [f'{cols[i]} = \'{values[cols[i]]}\'' if cols[i] != 'ano_publi' else f'{cols[i]} = {values[cols[i]]}' for i in range(len(cols))]
-                cur.execute(f'UPDATE livros SET {", ".join(values)} WHERE id={id}')
-                conn.commit()
-                return {'message' : f'Livro com ID={id} atualizado com sucesso.'}, 200
-
-        except psycopg2.Error as e:
-            conn.rollback()
-            return {"erro": str(e)}, 400
-        finally:
-            cur.close()
+                return {"message" : f"Bicicleta com ID={id} atualizado com sucesso."}, 200
+        except bson.errors.InvalidId:
+            return {"message": 'Insira um ID válido.'}, 400
+        except pymongo.errors.PyMongoError as e:
+            return {"server_error": str(e)}, 500
 
 #-----------------------------------------------------------------
 
@@ -274,21 +249,28 @@ def delete_emprestimo(id):
 
 #POST /emprestimos/usuarios/<id_usuario>/bikes/<id_bike>: Exclui um empréstimo pelo ID.
 @app.route("/emprestimos/usuarios/<id_usuario>/bikes/<id_bike>", methods=["POST"])
-def post_emprestimo(id):
-    collection = db['emprestimo']
-    cur = conn.cursor()
+def post_emprestimo(id_usuario, id_bike):
+    collection = db['emprestimos']
     try:
-        cur.execute(f"DELETE FROM usuarios WHERE id={id}")
-        if cur.rowcount == 0:
-            return {"message" : f"Usuário com ID={id} não existe."}, 204
-        else:
-            conn.commit()
-            return jsonify({"message" : f"Usuário com ID={id} deletado com sucesso."}), 200
-    except psycopg2.Error as e:
-        conn.rollback()
-        return {"erro": str(e)}, 400
-    finally:
-        cur.close()
+        # First, check if the user and bike exist
+        if not db['usuarios'].find_one({'_id': ObjectId(id_usuario)}):
+            return jsonify({"message": "Usuário não encontrado."}), 404
+        if not db['bikes'].find_one({'_id': ObjectId(id_bike)}):
+            return jsonify({"message": "Bicicleta não encontrada."}), 404
+
+        # Create a new loan entry
+        loan = {
+            "usuario_id": ObjectId(id_usuario),
+            "bike_id": ObjectId(id_bike),
+            "data_emprestimo": datetime.now()
+        }
+        db['emprestimos'].insert_one(loan)
+
+        return jsonify({"message": "Empréstimo registrado com sucesso.", "emprestimo": loan}), 201
+    except InvalidId:
+        return jsonify({"message": "ID inválido fornecido."}), 400
+    except PyMongoError as e:
+        return jsonify({"server_error": str(e)}), 500
 #-----------------------------------------------------------------
 
 if __name__ == "__main__":
